@@ -3,17 +3,21 @@
 -- https://www.kaggle.com/datasets/swaptr/layoffs-2022
 
 
-SELECT * 
-FROM world_layoffs.layoffs;
+
+--Preview of original data
+SELECT company, industry, total_laid_off, 'date', country
+FROM world_layoffs.layoffs
+LIMIT 10;
 
 
 
--- We create a separate table to work on, so as not to change the original one
+-- Create a copy of the data for cleaning (staging table)
 CREATE TABLE world_layoffs.layoffs_staging 
 LIKE world_layoffs.layoffs;
 
-INSERT layoffs_staging 
-SELECT * FROM world_layoffs.layoffs;
+INSERT INTO world_layoffs.layoffs_staging (company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions)
+SELECT company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions
+FROM world_layoffs.layoffs;
 
 
 -- 1. Remove Duplicates
@@ -24,25 +28,25 @@ SELECT *
 FROM world_layoffs.layoffs_staging
 ;
 
-SELECT company, industry, total_laid_off,`date`,
-		ROW_NUMBER() OVER (
-			PARTITION BY company, industry, total_laid_off,`date`) AS row_num
-	FROM 
-		world_layoffs.layoffs_staging;
+SELECT *,
+       ROW_NUMBER() OVER (
+         PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions
+         ORDER BY company
+       ) AS row_num
+FROM world_layoffs.layoffs_staging;
 
 
 
 SELECT *
 FROM (
-	SELECT company, industry, total_laid_off,`date`,
-		ROW_NUMBER() OVER (
-			PARTITION BY company, industry, total_laid_off,`date`
-			) AS row_num
-	FROM 
-		world_layoffs.layoffs_staging
-) duplicates
-WHERE 
-	row_num > 1;
+  SELECT company, industry, total_laid_off, `date`,
+         ROW_NUMBER() OVER (
+           PARTITION BY company, industry, total_laid_off, `date`
+           ORDER BY company
+         ) AS row_num
+  FROM world_layoffs.layoffs_staging
+) AS duplicates
+WHERE row_num > 1;
     
 -- look at oda to confirm
 SELECT *
@@ -52,15 +56,14 @@ WHERE company = 'Oda'
 
 SELECT *
 FROM (
-	SELECT company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions,
-		ROW_NUMBER() OVER (
-			PARTITION BY company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions
-			) AS row_num
-	FROM 
-		world_layoffs.layoffs_staging
-) duplicates
-WHERE 
-	row_num > 1;
+  SELECT company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions,
+         ROW_NUMBER() OVER (
+           PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions
+           ORDER BY company
+         ) AS row_num
+  FROM world_layoffs.layoffs_staging
+) AS duplicates
+WHERE row_num > 1;
 
 
 WITH DELETE_CTE AS 
@@ -262,7 +265,9 @@ FROM world_layoffs.layoffs_staging2
 WHERE total_laid_off IS NULL
 AND percentage_laid_off IS NULL;
 
--- Delete Useless data we can't really use
+-- Delete Useless data we can't really use (total_laid_off and percentage_laid_off are both null)
+
+
 DELETE FROM world_layoffs.layoffs_staging2
 WHERE total_laid_off IS NULL
 AND percentage_laid_off IS NULL;
@@ -273,6 +278,17 @@ FROM world_layoffs.layoffs_staging2;
 ALTER TABLE layoffs_staging2
 DROP COLUMN row_num;
 
-
-SELECT * 
+-- 5. Create a cleaned view of the data
+CREATE OR REPLACE VIEW layoffs_cleaned AS
+SELECT company,
+       location,
+       industry,
+       total_laid_off,
+       percentage_laid_off,
+       `date`,
+       stage,
+       country,
+       funds_raised_millions
 FROM world_layoffs.layoffs_staging2;
+
+SELECT * FROM layoffs_cleaned LIMIT 10;
